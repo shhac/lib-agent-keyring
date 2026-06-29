@@ -1,0 +1,119 @@
+package keyring
+
+import (
+	"errors"
+	"fmt"
+)
+
+// NoKeychainKey is the env-namespace key that opts out of the OS keychain.
+// Setting the resolved variable to a truthy value makes Keyring.Available()
+// report false, so callers fall back to the 0600 file store and the OS secret
+// store (and any GUI prompt) is never reached — which is what makes the
+// credential-write path testable in CI and other non-interactive contexts.
+//
+// It resolves through the keychain's env.Namespace, so for a service
+// "app.paulie.agent-slack" the opt-out var is AGENT_SLACK_NO_KEYCHAIN, with
+// LIB_AGENT_NO_KEYCHAIN as the family-wide fallback (set it once to flip every
+// agent-* CLI headless).
+const NoKeychainKey = "NO_KEYCHAIN"
+
+// NoKeychainEnv is the family-wide opt-out variable: the fallback consulted when
+// no per-CLI AGENT_<NAME>_NO_KEYCHAIN is set. Retained for reference and tests.
+const NoKeychainEnv = familyPrefix + "_" + NoKeychainKey
+
+// ErrUnavailable is returned by keychain mutations when no OS secret
+// store is available (an unsupported platform, or a host with no usable backend).
+var ErrUnavailable = errors.New("keychain unavailable on this platform")
+
+// backend is the OS-specific secret store behind Keyring. It is selected per-OS
+// by newBackend, which is defined once per platform in a build-tagged file
+// (keychain_darwin.go uses the macOS `security` CLI; keychain_linux.go and
+// keychain_windows.go use the system keyring; keychain_other.go is a no-op). So
+// supporting a new OS is a new file, not a conditional sprinkled through methods.
+// Methods take the account; the backend closes over the service at construction.
+type backend interface {
+	// available reports whether this OS backend can be used right now (the store
+	// exists and is reachable — e.g. a D-Bus session on Linux). The env opt-out is
+	// applied separately, by the Keyring wrapper.
+	available() bool
+	get(account string) (string, bool)
+	set(account, secret string) error
+	delete(account string) error
+	deleteAll() error
+}
+
+// Keyring stores secrets in the host's secret store — the macOS login keychain,
+// the Linux Secret Service, or the Windows Credential Manager — keyed by Service
+// (e.g. "app.paulie.agent-foo") and an account name. Where no store is available
+// it reports Available() == false and mutations return ErrUnavailable, so
+// callers fall back to file storage.
+type Keyring struct {
+	Service string
+	env     envNamespace // resolves the NO_KEYCHAIN opt-out
+	backend backend      // OS-specific store, selected by newBackend
+}
+
+// New returns a Keyring for the given service, deriving the env
+// namespace from the service's last dotted segment — so "app.paulie.agent-slack"
+// opts out via AGENT_SLACK_NO_KEYCHAIN (or the family-wide LIB_AGENT_NO_KEYCHAIN).
+func New(service string) *Keyring {
+	return NewWithEnvPrefix(service, prefixFromName(lastSegment(service)))
+}
+
+// NewWithEnvPrefix is New with an explicit env prefix (e.g.
+// "AGENT_SLACK") instead of one derived from the service. Use it when the
+// service id and the desired env namespace don't line up.
+func NewWithEnvPrefix(service, prefix string) *Keyring {
+	return &Keyring{Service: service, env: envNamespace{Prefix: prefix}, backend: newBackend(service)}
+}
+
+// Available reports whether the keychain can be used: the OS backend is reachable
+// and the NO_KEYCHAIN opt-out (per-CLI AGENT_<NAME>_NO_KEYCHAIN, or the
+// family-wide LIB_AGENT_NO_KEYCHAIN) is not set. When unavailable, callers fall
+// back to the file store — which is what makes the credential-write path testable
+// headlessly and keeps non-interactive hosts from blocking on a GUI prompt.
+func (k *Keyring) Available() bool {
+	return k.backend.available() && !k.env.flag(NoKeychainKey)
+}
+
+// Get returns the secret for account and whether it was found.
+func (k *Keyring) Get(account string) (string, bool) {
+	if !k.Available() {
+		return "", false
+	}
+	return k.backend.get(account)
+}
+
+// Set stores secret for account, replacing any existing entry.
+func (k *Keyring) Set(account, secret string) error {
+	if !k.Available() {
+		return ErrUnavailable
+	}
+	return k.backend.set(account, secret)
+}
+
+// Delete removes the secret for account.
+func (k *Keyring) Delete(account string) error {
+	if !k.Available() {
+		return ErrUnavailable
+	}
+	return k.backend.delete(account)
+}
+
+// DeleteAll removes every secret stored under the service, including accounts the
+// caller doesn't track (orphans).
+func (k *Keyring) DeleteAll() error {
+	if !k.Available() {
+		return ErrUnavailable
+	}
+	return k.backend.deleteAll()
+}
+
+// keyringErr builds a descriptive error from a failed backend call, folding in
+// the store's own diagnostic when it printed one.
+func keyringErr(op, service, account, out string, err error) error {
+	if out != "" {
+		return fmt.Errorf("keychain: %s for %q (service %q): %w: %s", op, account, service, err, out)
+	}
+	return fmt.Errorf("keychain: %s for %q (service %q): %w", op, account, service, err)
+}

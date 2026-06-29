@@ -11,7 +11,7 @@ import (
 // store (and any GUI prompt) is never reached — which is what makes the
 // credential-write path testable in CI and other non-interactive contexts.
 //
-// It resolves through the keychain's env.Namespace, so for a service
+// It resolves through the env namespace, so for a service
 // "app.paulie.agent-slack" the opt-out var is AGENT_SLACK_NO_KEYCHAIN, with
 // LIB_AGENT_NO_KEYCHAIN as the family-wide fallback (set it once to flip every
 // agent-* CLI headless).
@@ -23,7 +23,7 @@ const NoKeychainEnv = familyPrefix + "_" + NoKeychainKey
 
 // ErrUnavailable is returned by keychain mutations when no OS secret
 // store is available (an unsupported platform, or a host with no usable backend).
-var ErrUnavailable = errors.New("keychain unavailable on this platform")
+var ErrUnavailable = errors.New("keyring unavailable on this platform")
 
 // backend is the OS-specific secret store behind Keyring. It is selected per-OS
 // by newBackend, which is defined once per platform in a build-tagged file
@@ -113,7 +113,7 @@ func (k *Keyring) DeleteAll() error {
 // the store's own diagnostic when it printed one.
 func keyringErr(op, service, account, out string, err error) error {
 	if out != "" {
-		return fmt.Errorf("keychain: %s for %q (service %q): %w: %s", op, account, service, err, out)
+		return fmt.Errorf("keyring: %s for %q (service %q): %w: %s", op, account, service, err, out)
 	}
-	return fmt.Errorf("keychain: %s for %q (service %q): %w", op, account, service, err)
+	return fmt.Errorf("keyring: %s for %q (service %q): %w", op, account, service, err)
 }

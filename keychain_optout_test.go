@@ -31,7 +31,7 @@ func withFake(service string, avail bool) (*Keyring, *fakeBackend) {
 	return k, fb
 }
 
-func TestKeychainAvailable_OptOutEnv(t *testing.T) {
+func TestKeyringAvailable_OptOutEnv(t *testing.T) {
 	k, _ := withFake("app.test.optout", true)
 
 	t.Run("family-wide opt-out forces unavailable", func(t *testing.T) {
@@ -60,7 +60,7 @@ func TestKeychainAvailable_OptOutEnv(t *testing.T) {
 
 // TestKeychainAvailable_PerCLIPrecedence — the per-CLI var derived from the
 // service wins over the family-wide one, and can re-enable a family-wide opt-out.
-func TestKeychainAvailable_PerCLIPrecedence(t *testing.T) {
+func TestKeyringAvailable_PerCLIPrecedence(t *testing.T) {
 	k, _ := withFake("app.paulie.agent-foo", true)
 	const perCLI = "AGENT_FOO_NO_KEYCHAIN"
 
@@ -91,7 +91,7 @@ func TestNewWithEnvPrefix_Explicit(t *testing.T) {
 
 // TestKeychain_Delegation — when available, the wrapper round-trips through the
 // backend; when opted out, mutations return ErrUnavailable and reads miss.
-func TestKeychain_Delegation(t *testing.T) {
+func TestKeyring_Delegation(t *testing.T) {
 	k, fb := withFake("app.paulie.agent-foo", true)
 
 	if err := k.Set("acct", "secret"); err != nil {

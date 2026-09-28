@@ -20,3 +20,14 @@ type linuxBackend struct{ keyringStore }
 func (linuxBackend) available() bool {
 	return os.Getenv("DBUS_SESSION_BUS_ADDRESS") != ""
 }
+
+// status cannot see whether the Secret Service's collection is locked without
+// asking it for something, so a reachable service reports Ready.
+func (linuxBackend) status() Status { return Ready }
+
+func hostStatus() Status {
+	if (linuxBackend{}).available() {
+		return Ready
+	}
+	return Unavailable
+}

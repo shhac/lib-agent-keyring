@@ -2,7 +2,10 @@ module github.com/shhac/lib-agent-keyring
 
 go 1.26
 
-require github.com/zalando/go-keyring v0.2.8
+require (
+	github.com/ebitengine/purego v0.11.1
+	github.com/zalando/go-keyring v0.2.8
+)
 
 require (
 	github.com/danieljoos/wincred v1.2.3 // indirect

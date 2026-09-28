@@ -13,7 +13,7 @@ var errBoom = errors.New("exit status 1")
 // fakeSecurity builds a securityBackend whose `security` calls are intercepted,
 // so the arg construction and error wrapping are tested without a real keychain.
 func fakeSecurity(run func(args ...string) (string, error)) *securityBackend {
-	return &securityBackend{service: "app.paulie.test", run: run}
+	return &securityBackend{service: "app.paulie.test", run: run, state: func() Status { return Ready }}
 }
 
 func TestSecurityBackend_GetSetArgs(t *testing.T) {

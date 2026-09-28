@@ -15,3 +15,8 @@ type windowsBackend struct{ keyringStore }
 // available is always true: the Credential Manager is present on every Windows
 // host (no session-bus equivalent to check).
 func (windowsBackend) available() bool { return true }
+
+// status: the Credential Manager is unlocked with the user's session.
+func (windowsBackend) status() Status { return Ready }
+
+func hostStatus() Status { return Ready }

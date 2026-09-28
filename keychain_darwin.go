@@ -11,7 +11,7 @@ import (
 // pre-seam implementation so existing keychain items (raw, un-encoded values)
 // stay readable.
 func newBackend(service string) backend {
-	return &securityBackend{service: service, run: runSecurity}
+	return &securityBackend{service: service, run: runSecurity, state: defaultKeychainStatus}
 }
 
 // securityBackend stores secrets in the macOS login keychain via the `security`
@@ -19,9 +19,16 @@ func newBackend(service string) backend {
 type securityBackend struct {
 	service string
 	run     func(args ...string) (string, error)
+	state   func() Status
 }
 
 func (b *securityBackend) available() bool { return true }
+
+// status is the default keychain's, which `security` writes to and searches
+// first. A locked one would make every call below raise an unlock prompt.
+func (b *securityBackend) status() Status { return b.state() }
+
+func hostStatus() Status { return defaultKeychainStatus() }
 
 func (b *securityBackend) get(account string) (string, bool) {
 	v, err := b.run("find-generic-password", "-s", b.service, "-a", account, "-w")

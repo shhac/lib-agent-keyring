@@ -7,13 +7,20 @@ import "testing"
 // platform — the OS backends themselves are exercised in their build-tagged
 // tests.
 type fakeBackend struct {
-	avail bool
-	store map[string]string
+	avail  bool
+	locked bool
+	store  map[string]string
 }
 
 func newFake(avail bool) *fakeBackend { return &fakeBackend{avail: avail, store: map[string]string{}} }
 
 func (b *fakeBackend) available() bool { return b.avail }
+func (b *fakeBackend) status() Status {
+	if b.locked {
+		return Locked
+	}
+	return Ready
+}
 func (b *fakeBackend) get(a string) (string, bool) {
 	v, ok := b.store[a]
 	return v, ok

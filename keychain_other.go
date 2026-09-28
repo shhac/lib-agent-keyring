@@ -10,7 +10,10 @@ func newBackend(string) backend { return unavailableBackend{} }
 type unavailableBackend struct{}
 
 func (unavailableBackend) available() bool           { return false }
+func (unavailableBackend) status() Status            { return Unavailable }
 func (unavailableBackend) get(string) (string, bool) { return "", false }
 func (unavailableBackend) set(_, _ string) error     { return ErrUnavailable }
 func (unavailableBackend) delete(string) error       { return ErrUnavailable }
 func (unavailableBackend) deleteAll() error          { return ErrUnavailable }
+
+func hostStatus() Status { return Unavailable }

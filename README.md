@@ -31,6 +31,20 @@ if kr.Available() {
   (family-wide). When false, mutations return `ErrUnavailable` so the caller can
   use a file store. This is what keeps credential writes testable in CI and stops
   non-interactive hosts from blocking on a GUI prompt.
+- **`Status()`** says whether the store can answer without asking anyone:
+  `Ready`, `Locked` or `Unavailable`. A locked store is never touched: `Get`
+  reports not found and mutations return `ErrLocked`, rather than putting an
+  unlock prompt in front of the user. Several such prompts at once have wedged
+  macOS's SecurityAgent. **`HostStatus()`** asks the same of the host's default
+  store without a service, for callers that launch other tools which read it
+  (such as a CLI that keeps its login in the keychain).
+
+On macOS the status is the default keychain's own, from `SecKeychainGetStatus`,
+called through [purego](https://github.com/ebitengine/purego) so the package
+stays CGO-free. It reads state and never prompts, and takes about a
+millisecond. The test proves it on a throwaway keychain, never the user's.
+Elsewhere a reachable store reports `Ready`: the Linux Secret Service's lock
+state cannot be read without asking it for something.
 
 ## Backends
 

@@ -25,6 +25,42 @@ const NoKeychainEnv = familyPrefix + "_" + NoKeychainKey
 // store is available (an unsupported platform, or a host with no usable backend).
 var ErrUnavailable = errors.New("keyring unavailable on this platform")
 
+// ErrLocked is returned by keychain mutations when the store exists but is
+// locked: using it would ask the user to unlock it, so it is not used.
+var ErrLocked = errors.New("keyring locked: using it would ask the user to unlock it")
+
+// Status is whether a secret store can answer without asking anyone.
+type Status int
+
+const (
+	// Ready: the store answers silently.
+	Ready Status = iota
+	// Locked: the store exists but is locked. Reading or writing it would put
+	// an unlock prompt in front of the user, which a headless caller must not
+	// do: several at once have wedged macOS's SecurityAgent.
+	Locked
+	// Unavailable: there is no store, the opt-out is set, or its state could
+	// not be read.
+	Unavailable
+)
+
+func (s Status) String() string {
+	switch s {
+	case Ready:
+		return "ready"
+	case Locked:
+		return "locked"
+	default:
+		return "unavailable"
+	}
+}
+
+// HostStatus reports whether the host's default secret store can answer
+// silently, for any service. It never prompts and is cheap enough to ask
+// before every use. Only macOS detects a locked store, from the login
+// keychain's own status; elsewhere a reachable store reports Ready.
+func HostStatus() Status { return hostStatus() }
+
 // backend is the OS-specific secret store behind Keyring. It is selected per-OS
 // by newBackend, which is defined once per platform in a build-tagged file
 // (keychain_darwin.go uses the macOS `security` CLI; keychain_linux.go and
@@ -36,6 +72,9 @@ type backend interface {
 	// exists and is reachable — e.g. a D-Bus session on Linux). The env opt-out is
 	// applied separately, by the Keyring wrapper.
 	available() bool
+	// status reports, without any interaction, whether the store can answer
+	// silently. It is asked only when available is true.
+	status() Status
 	get(account string) (string, bool)
 	set(account, secret string) error
 	delete(account string) error
@@ -76,9 +115,32 @@ func (k *Keyring) Available() bool {
 	return k.backend.available() && !k.env.flag(NoKeychainKey)
 }
 
-// Get returns the secret for account and whether it was found.
-func (k *Keyring) Get(account string) (string, bool) {
+// Status reports whether this keyring can be used without asking anyone: the
+// opt-out and the backend's availability first, then the store's own state.
+func (k *Keyring) Status() Status {
 	if !k.Available() {
+		return Unavailable
+	}
+	return k.backend.status()
+}
+
+// ready is the error a call must return instead of touching the store, or nil.
+func (k *Keyring) ready() error {
+	switch k.Status() {
+	case Ready:
+		return nil
+	case Locked:
+		return ErrLocked
+	default:
+		return ErrUnavailable
+	}
+}
+
+// Get returns the secret for account and whether it was found. A locked
+// store reports not found rather than prompting; ask Status to tell the two
+// apart.
+func (k *Keyring) Get(account string) (string, bool) {
+	if k.ready() != nil {
 		return "", false
 	}
 	return k.backend.get(account)
@@ -86,16 +148,16 @@ func (k *Keyring) Get(account string) (string, bool) {
 
 // Set stores secret for account, replacing any existing entry.
 func (k *Keyring) Set(account, secret string) error {
-	if !k.Available() {
-		return ErrUnavailable
+	if err := k.ready(); err != nil {
+		return err
 	}
 	return k.backend.set(account, secret)
 }
 
 // Delete removes the secret for account.
 func (k *Keyring) Delete(account string) error {
-	if !k.Available() {
-		return ErrUnavailable
+	if err := k.ready(); err != nil {
+		return err
 	}
 	return k.backend.delete(account)
 }
@@ -103,8 +165,8 @@ func (k *Keyring) Delete(account string) error {
 // DeleteAll removes every secret stored under the service, including accounts the
 // caller doesn't track (orphans).
 func (k *Keyring) DeleteAll() error {
-	if !k.Available() {
-		return ErrUnavailable
+	if err := k.ready(); err != nil {
+		return err
 	}
 	return k.backend.deleteAll()
 }
